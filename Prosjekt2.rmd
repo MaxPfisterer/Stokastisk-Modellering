@@ -1,0 +1,335 @@
+---
+title: "Project 2"
+author: "Max Pfisterer, Kim-Iver Blindheimsvik"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+header-includes:
+- \geometry{top=1in}
+- \usepackage{titling}
+- \pretitle{\begin{flushleft}\Huge\bfseries}
+- \posttitle{\end{flushleft}}
+- \preauthor{\begin{flushleft}\Large}
+- \postauthor{\end{flushleft}}
+- \predate{\begin{flushleft}\large}
+- \postdate{\end{flushleft}}
+- \DeclareUnicodeCharacter{03B9}{\ensuremath{\theta}}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Problem 1**
+
+**a)**
+There are four conditions for an $M/M/1$ queue. Firstly the queue arrivals must follow a poisson process and move the process from state i to i+1 . Secondly the service times are exponentially distributed. Thirdly there is only one server who serves one customer at the time following the order of the arrivals. Last there is no limit to how big the queue formed can be. 
+
+We can see that the arrivals follows a poisson process and have the rate parameter $\lambda$. Also the treatment times of the patientes at the UCC follows an exponential distribution with a parameter 1/$\mu$ and are independent of eachother. This fullfills therefore the first two conditions three conditions. Also the tasks mentions that the UCC only treats one patient at one time, while the rests get put into a queue. This fullfils the third condition. The last conditions is fulfilled since the task assumes that there is no upper limit to the UCC queue. 
+
+Since the soujorn time/treatment time is distributed with a exponential distribution with parameter $\mu$, we know that it can be viewed as the death rate in a birth and death process. We also know that the arrivals and treatments are independent. This means that it's only possible to move up or down one state at a time (i+1 or i-1 where i = state). Therefore we know that this $M/M/1$ queue can be viewed as a birth and death process with independently exponentially distributed birth rate, $\lambda$, and death rate, $\mu$. We also know that the process, $X(t)$ has a infinite state space. 
+
+To find the average time a patient spends in the UCC as functions of the parameters $\mu$ and $\lambda$, we need to use Little's law. This is given by $W=\frac{L}{A}$. Here L denotes the average of the patients in the UCC, W  denotes the average time a patient spends in the UCC and A is the average in and out rate of the patients in the UCC. Here W is the unkown we want to find. By inputting the variables for A we therefore get that W, which is what we find, is equal to $W = \frac{L}{\mu-\lambda}$, where $\mu-\lambda$ reprensents the difference between the death and birth rate mentioned previously. 
+
+**b)**
+```{r, echo=FALSE,fig.align='center',fig.height=4,fig.width=5}
+
+simUCC <- function(lambda, mu, time, p = 0)
+{
+  # Initial conditions
+  n = c(0) # vector of amount of urgent patients
+  u = c(0) # vector of amount of normal patients
+  nt = c(0) # vector of times of state transitions (normal patients)
+  ut = c(0) # vector of times of state transitions (urgent patients)
+  
+  simlength = 0
+  
+  while(simlength < time){
+    if(tail(u,1) == 0 & tail(n,1) == 0){
+      # zero people in the queueing system. Only possible transition is to 1 patient
+      # simulate time to arrival of patient and add it to total time simulated
+      sojourn = rexp(n = 1, rate = lambda+mu)
+      simlength = simlength + sojourn
+      # either get an urgent or normal patient
+      if(runif(1) < p){
+        u = c(u, 1)
+        ut = c(ut, simlength)
+      } else{
+        n = c(n, 1)
+        nt = c(nt, simlength)
+      }
+    } else{
+      # There are people in the UCC already. Either treat a patient or get a new one
+      # Simulate time to treatment or arrival of patient and add to total simulated time
+      sojourn = rexp(n = 1, rate = lambda+mu)
+      simlength = simlength + sojourn
+      if(runif(1) < lambda/(lambda+mu)){
+        # new patient arrives, simulate urgent or normal
+        if(runif(1) < p){
+          u = c(u, tail(u,1)+1)
+          ut = c(ut, simlength)
+        } else{
+          n = c(n, tail(n,1)+1)
+          nt = c(nt, simlength)
+        }
+      } else{
+        # treat a patient, an urgent one if there is one in the system
+        if(tail(u,1)>0){
+          u = c(u, tail(u,1)-1)
+          ut = c(ut, simlength)
+        } else{
+          n = c(n, tail(n,1)-1)
+          nt = c(nt, simlength)
+        }
+      }
+    }
+  }
+  # Undo the last transition if it happens after the end of the simulation
+  if(simlength > time){
+    if(tail(ut,1) > time){
+      if(length(u) == 1){
+        u = c(0)
+        ut = c(0,time)
+      } else{
+        u[length(u)] = u[length(u)-1]
+        ut[length(ut)] = time
+      }
+    } else{
+      if(length(n) == 1){
+        n = c(0)
+        nt = c(0,time)
+      } else{
+        n[length(n)] = n[length(n)-1]
+        nt[length(nt)] = time
+      }
+    }
+  }
+  return(list("normal" = n, "normaltimes" = nt, "urgent" = u, "urgenttimes" = ut))
+}
+
+conf_int <- function(num_sim, time, lambda, mu, p){
+  tot_sim <- replicate(num_sim, simUCC(lambda = lambda, mu = mu, time=1))
+  times = unlist(tot_sim)
+  mean = mean(times)
+  sd = sd(times)
+  error = 2.045*(sd/sqrt(num_sim))
+  conf_int = c(mean - error, mean + error)
+  return(conf_int)
+}
+
+conf_int(num_sim = 30, time = 50*24, lambda = 5, mu=6, 1)
+
+Xsims = c()
+for(i in 1:30){
+  Xt <- simUCC(lambda = 5, mu = 6, 50*24)
+  Xsims = c(Xsims, mean(Xt$normal))
+}
+
+stopplot = min(which(Xt$normaltimes>12))
+plot(NULL, NULL, xlim = c(0, 12), ylim = c(0, max(Xt$normal[c(1:stopplot)])), 
+     xlab = "Time (hours)", ylab = "Number of patients in UCC", cex.axis = 1.5, cex.lab = 1.5)
+# index of 12hr mark
+for(i in 1:stopplot){
+  lines(Xt$normaltimes[i:(i+1)], rep(Xt$normal[i],2), lwd = 2)
+}
+    
+```
+
+The formula from 1a, Littles law, states that $W = \frac{L}{\mu-\lambda}$. We know that the UCC has a capaticy of one patient at a time, therefore it becomes $W = \frac{1}{\mu-\lambda}$, and then $W = \frac{1}{6-5} = \frac{1}1=1$. We therefore see that the average waiting time is 1. 
+
+We assumed that the confidence interval was a t-distribution. This is because the standard deviation was unknown and since we're simuating we have to take samples from the simulation. Therefore we got the confidence intervall from (0.48, 1.40). Here we see that the intervall is very wide, so we suspect that there's a mistake within the confidence intervall itself or within the simulation. Still the average time of 1 calculated above matches with this confidence intervall. 
+
+**c)**
+$\{U(t):t\geq0\}$ satisfies the conditions of an $M/M/1$ queue as it has the exact same properties as $\{X(t):t\geq0\}$, which we have shown is an $M/M/1$ queue. The reason is that the urgent patients get moved to the top of the queue, so it is irrelevant how many normal people are waiting for treatment.
+
+As the arrival rate of $\{X(t):t\geq0\}$ is $\lambda$ patients per hour, and each patient has an independent probability $p$ of being an urgent patient, the rate of $\{U(t):t\geq0\}$ is $p\lambda$ patients per hour.
+
+The long-run mean number of urgent patients in the UCC can be calculated by finding the limiting distribution of $\{U(t):t\geq0\}$, and then calculating the expected state $U(t)$:
+$\pi_j = \frac{\theta_j}{\sum_{k=0}^\infty\theta_k},\enspace j=0,1,\ldots$, with $\theta_0=1,\enspace \theta_k=\Pi_{i=1}^k\frac{\lambda_{i-1}}{\mu_i}=\left(\frac{p\lambda}{\mu}\right)^k$
+Therefore $\pi_j = \left(\frac{p\lambda}{\mu}\right)^k\left(1-\frac{p\lambda}{\mu}\right)$, as shown in the lectures. This means that the long-run proportion of time spent in each state, i.e. the pdf of $\{U(t):t\geq0\}$ is geometrically distributed.
+$\text{\#Customers}+1\sim \text{Geometric}(1-\frac{p\lambda}{\mu})$. We get that the long-run mean number of urgent patients in the UCC is $\text{E}[\text{\#Customers}+1]-1=\left(1-\frac{p\lambda}{\mu}\right)^{-1}-1=\frac{p\lambda}{\mu-p\lambda}$
+
+**d)**
+If the number of normal patients goes from 2 to 1,we know that there are no urgent patients in the system, and that the treatment time is $\text{Exp}(\mu)$. However, if the number of normal patients goes from 0 to 1, we have no way of knowing the distribution of the treatment time, as there could be an arbitrary number of urgent patients waiting for treatment. Therefore the service times are not independent of the arrival process and $\{N(t):t\geq0\}$ is not a $M/M/1$ queue.
+
+As $\{X(t):t\geq0\}$ is a M/M/1 queue, we can calculate long-run mean number of all patients, and then subtract the number found in $\mathbf{c)}$ to get the long-run mean number of normal patients. If we exchange the rate $p\lambda$ with the rate $\lambda$ from the calculations in $\mathbf{c)}$ we get that the mean number of normal patients is $\frac{\lambda}{\mu-\lambda}$.
+We can now easily calculate the long-run mean number of normal patients: $\frac{\lambda}{\mu-\lambda}-\frac{p\lambda}{\mu-p\lambda}=\frac{\lambda(\mu-p\lambda)-p\lambda(\mu-\lambda)}{(\mu-\lambda)(\mu-p\lambda)}=\frac{\mu(1-p)\lambda}{(\mu-\lambda)(\mu-p\lambda)}$
+
+**e)**
+Little's law says that for any queue $L=\lambda W$, where, in this case, $L,\lambda,W$ are the long-run mean number of patients in the queue, the arrival rate of patients, and the expected time spent in the queue, respectively.
+For an urgent patient we get:
+$L_U=p\lambda W_U\Rightarrow W_U=\frac{L_U}{p\lambda}=\frac{p\lambda}{\mu-p\lambda}\frac1{p\lambda}=\frac1{\mu-p\lambda}$
+
+Little's law is also valid for $\{N(t):t\geq0\}$, despite it not being M/M/1. Therefore:
+$L_N=(1-p)\lambda W_N\Rightarrow W_N=\frac{L_N}{(1-p)\lambda}=\frac{\mu(1-p)\lambda}{(\mu-\lambda)(\mu-p\lambda)}\frac1{(1-p)\lambda}=\frac{\mu}{(\mu-\lambda)(\mu-p\lambda)}$
+
+
+**f)**
+From the task information we know that $\lambda = 5$ patients per hour. We also know that $frac{1}\mu = 10$ minutes. By solving the equation and converting minutes into hours we get that $\mu = 6$ patients per hour. We then define to functions for the W-U and W-N plots.The W-U and W-N functions are defined the task g above. 
+
+```{r, echo=FALSE,fig.align='center',fig.height=4,fig.width=5}
+
+lambda = 5
+mu = 6
+
+Wu <- function(p){
+  return(1/(mu-p*lambda))
+}
+
+Wn <- function(p){
+  return((mu)/((mu-lambda)*(mu-(p*lambda))))
+}
+
+p = seq(0, 1, length.out=1000)
+x_lim = c(0:1)
+min_val = min(Wu(p)) # Taking the minimum of Wu(p) since I know that the UCC will have a shorter time for the urgent patients. I can therefore use this as a lower bound
+max_val = max(Wn(p)) #Using the same assumptions, but here I know that the maximum of the Wn(p) will be bigger than the maximum of Wu(p)
+y_lim=c(min_val, max_val)
+
+
+plot(NULL, NULL, xlim=x_lim, ylim=y_lim, main ="Wait time urgent and normal",
+     xlab = "P", ylab = "Expected wait time", cex.axis = 1.5, cex.lab = 1.5, lwd = 1.5)
+lines(p, Wu(p), col = "red", lwd = 2)
+lines(p, Wn(p), col = "green", lwd = 2)
+legend(x="left", legend="Urgent", col = "red", lty=1:2)
+legend(x="topleft", legend="Normal", col = "green", lty=1:2)
+
+#Cat(Wn(0)) #Wn(1) = 6
+#Cat(Wn(1)) #Wn(0) = 1
+  
+```
+
+By calculation we find that $Wn(1)=6$ and $Wn(0)=1$. The this means that the average wait time for a normal patient with p-value 1 is $\approx6$ hours and for p-value 0 it's $\approx1$ hour. 
+
+For $p\approx0$, we see that there's almost no urgent patients arriving. This means that as an urgent patient there's a very low probability that there'll be any in front of you in the queue.As a normal patient in this case the queue will mostly behave like a M/M/1 queue with waiting time described in task A. For $p\approx1$ we see that there's almost only urgent patients in the queue. For a normal patient arriving this means that there'll not be many normal patients in front of you in the queue, but you'll still have to wait until the queue is cleared for urgent patients before your service time. 
+
+To find the p-value for the expected time spent a normal patient was at the UCC for 2 hours we need to solve $Wn(p)=2$. By inserting $\mu = 6$ and $\lambda=5$ into this equation we get $\frac{6}{-5p+6}=2$. Solving this equation by hand we get that $p=\frac{3}{5}$.
+
+**g**
+
+```{r, echo=FALSE,fig.align='center',fig.height=4,fig.width=5}
+Nsims = c()
+Usims = c()
+
+for(i in 1:30){
+  Xt2 <- simUCC(lambda = 5, mu = 6, 50*24, p=0.8)
+  Nsims = c(Nsims, mean(Xt2$normal))
+  Usims = c(Usims, mean(Xt2$urgent))
+}
+# plot last realization
+# index of 12hr mark
+stopnormal = min(which(Xt2$normaltimes>12))
+stopurgent = min(which(Xt2$urgenttimes>12))
+
+plot(NULL, NULL, xlim = c(0, 12), ylim = c(0, max(c(Xt2$normal[c(1:stopnormal)],Xt2$urgent[c(1:stopurgent)]))),
+     xlab = "Time (hours)", ylab = "Number of patients in UCC", cex.axis = 1.5, cex.lab = 1.5)
+for(i in 1:stopnormal){
+  lines(Xt2$normaltimes[i:(i+1)], rep(Xt2$normal[i],2), lwd = 2, col="green")
+  legend(x="topleft", legend="Normal", col = "green", lty=1:1)
+}
+for(i in 1:stopurgent){
+  lines(Xt2$urgenttimes[i:(i+1)], rep(Xt2$urgent[i],2), lwd = 2, col="red")
+  legend(x="topright", legend="urgent", col = "red", lty=1:1)
+  
+}
+```
+
+
+
+# Problem 2
+
+**a)**
+As $Y=(Y_A,Y_B)\sim\mathcal{N}_{51}\left(\begin{bmatrix}\mathbf{\mu}_A\\ \mathbf{\mu}_B \end{bmatrix},\begin{bmatrix} \Sigma_{AA} & \Sigma_{AB} \\ \Sigma_{BA} & \Sigma_{BB}\end{bmatrix}\right)$, with $\Sigma_{ij}$ given by $\text{Cov}[Y(\theta_i),Y(\theta_j)]$, and we condition on realized variables from the same process, we can use the theorem for calculating conditional expectation and variance. Letting the measured values be $Y_B$, and the conditional values be $Y_a$ this theorem gives us that $Y_A|Y_B=\mathbf{y}_B\sim\mathcal{N}_{46}(\mathbf{\mu}_C,\Sigma_c)$, with
+$\mathbf{\mu}_C=\mathbf{\mu}_A+\Sigma_{AA}\Sigma_{BB}^{-1}(\mathbf{y}_B-\mathbf{\mu}_B)$
+$\Sigma_C=\Sigma_{AA}-\Sigma_{AB}\Sigma_{BB}^{-1}\Sigma_{BA}$.
+For practical purposes we will use a full size matrix/vector for $\Sigma_C$ and $\mathbf{\mu}_C$, as the calculations for $\mathbf{\mu}_C$ and $\Sigma_C$ then will give us back $\mathbf{\mu}_C(B)=\mathbf{y}_B$, and $\text{diag}(\Sigma_C)(B)=0$ in the rows where we have measured values. This happens as both values are drawn from the same distribution, and the underlying model is deterministic. Computationally this follows from pairwise linear independence of the rows/columns where we have measured values.
+Predicted $\mu_C(\theta)$ with 90% prediction intervals, conditional on the five measured points:
+```{r, echo=FALSE,fig.align='center',fig.height=4,fig.width=5}
+par(mar=c(4, 5, 3, 2) + 0.1)
+### a
+# Grid
+xx = seq(0.25, 0.50, length.out = 51)
+
+# Construct mean vector and covariance matrix over the grid
+mu = rep(0.5, length(xx))
+Sig = matrix(0, nrow = length(xx), ncol = length(xx))
+for(i in 1:length(xx)){
+  for(j in 1:length(xx)){
+    Sig[i,j] = (1+15*abs(xx[i]-xx[j]))*exp(-15*abs(xx[i]-xx[j]))
+  }
+}
+Sig = (0.5**2)*Sig
+
+# Conditional rows/colmuns at θ = 0.30,0.35,0.39,0.41,0.45; indexes as follows
+cond = c(11,21,29,33,41)
+# Conditional values at these indeces
+condvals = c(0.5,0.32,0.4,0.35,0.6)
+
+# Calculating conditional mean vector and covariance matrix
+muC = mu + Sig[,cond,drop = FALSE]%*%solve(Sig[cond,cond,drop = FALSE], condvals-mu[cond])
+SigC = Sig-Sig[,cond, drop = FALSE]%*%solve(Sig[cond,cond, drop = FALSE], Sig[cond,,drop = FALSE])
+
+plot(NULL, NULL, xlim = c(0.25, 0.5), ylim = c(0.2, 1), main="With 5 measurements",
+     xlab = "Albedo of sea ice", ylab = "Predicted Score", cex.axis = 1.5, cex.lab = 1.5, lwd = 1.5)
+legend("top", legend = c("muC", "muC +-"), col = c("blue", "black"), lwd = 2)
+lines(xx, muC, col = "blue", lwd = 2)
+lines(xx, muC + qnorm(0.95)*sqrt(diag(SigC)), col = "black", lwd = 2)
+lines(xx, muC - qnorm(0.95)*sqrt(diag(SigC)), col = "black", lwd = 2)
+
+```
+
+		
+**b)**
+We use the cdf of a Gaussian distribution with the calculated conditional mean $\mu_C(\theta)$, and standard deviation $\sqrt{\text{diag}(\Sigma_C)(\theta)}$ to find $P\{y(\theta)<0.30\}$ conditional on the five evaluation points.
+```{r, echo=FALSE,fig.align='center',fig.height=4,fig.width=4}
+par(mar=c(4, 5, 3, 2) + 0.1)
+# Probability of y(θ) < 0.30 given the observed values
+plot(NULL, NULL, xlim = c(0.25, 0.5), ylim = c(0, 0.25), main="With 5 measurements",
+     xlab = "Albedo of sea ice", ylab = expression("Probability of y("~theta~") < 0.30"), cex.axis = 1.5, cex.lab = 1.5, lwd = 1.5)
+
+probs = pnorm(0.3, mean = muC, sd = sqrt(diag(SigC)))
+lines(xx,probs)
+```
+
+**c)**
+We now do the same calculations as in $\mathbf{2a)}$ and $\mathbf{2b)}$, with the added evaluation $(\theta,y(\theta))$
+```{r, echo=FALSE,fig.align='center',fig.height=4,fig.width=5}
+par(mar=c(4, 5, 3, 2) + 0.1)
+# Conditional rows/colmuns at θ = 0.30,0.35,0.39,0.41,0.45; indexes as follows
+cond2 = c(11,17,21,29,33,41)
+# Conditional values at these indeces
+condvals2 = c(0.5,0.4,0.32,0.4,0.35,0.6)
+
+# Calculating conditional mean vector and covariance matrix
+muC2 = mu + Sig[,cond2,drop = FALSE]%*%solve(Sig[cond2,cond2,drop = FALSE], condvals2-mu[cond2])
+SigC2 = Sig-Sig[,cond2, drop = FALSE]%*%solve(Sig[cond2,cond2, drop = FALSE], Sig[cond2,,drop = FALSE])
+
+plot(NULL, NULL, xlim = c(0.25, 0.5), ylim = c(0.2, 1), main="With 6 measurements",
+     xlab = "Albedo of sea ice", ylab = "Predicted Score", cex.axis = 1.5, cex.lab = 1.5, lwd = 1.5)
+lines(xx, muC2, col = "red", lwd = 2)
+lines(xx, muC2 + qnorm(0.95)*sqrt(diag(SigC2)), col = "green", lwd = 2)
+lines(xx, muC2 - qnorm(0.95)*sqrt(diag(SigC2)), col = "green", lwd = 2)
+
+# Probability of y(θ) < 0.30 given the observed values
+plot(NULL, NULL, xlim = c(0.25, 0.5), ylim = c(0, 0.25), main="With 6 measurements",
+     xlab = "Albedo of sea ice", ylab = expression("Probability of y("~theta~") < 0.30"), cex.axis = 1.5, cex.lab = 1.5, lwd = 1.5)
+
+probs2 = pnorm(0.3, mean = muC2, sd = sqrt(diag(SigC2)))
+lines(xx,probs2)
+
+#### Point where we have the largest probability of y(θ)<0.30 (0.36) and estimated P{y(0.36)<0.30}
+cat(paste0('Point \u03B9 where we have the largest probability of y(\u03B9)<0.30:\t\u03B9=', 0.25+0.005*(which.max(probs2)-1), "\n"))
+cat(paste0('Probability of y(\u03B9)<0.30 at \u03B9=', 0.25+0.005*(which.max(probs2)-1),':\t', round(max(probs2), digits=4), "\n"))
+# We want them to run the simulation using θ=0.36 as this is where we predict that they
+#   have the greatest chance of achieving y(θ)<0.30
+```
+We want the scientists to run the last simulation with $\theta=0.36$, as this is the value for $\theta$ where the probability of $y(\theta)<0.30$ is the largest.
+
+As an interesting side note, this was $P\{y(\theta)<0.30\}$ at the same point with only five measurements:
+```{r, echo=FALSE}
+#### Estimated P{y(0.36)<0.30} from 2b using only 5 measured values
+cat(round(probs[which.max(probs2)], digits=4))
+```
+We see that we measured $y(\theta)$ close to the previous expected maximal value of $P\{y(\theta)<0.30\}$, but as they measured a value of $y(\theta)$ greater than expected it is now lower at that point. Also, as we added a new point our function $\mu_C(\theta)$ is now different, and therefore the probability of $y(\theta)<0.30$ has increased at the current optimal point. 

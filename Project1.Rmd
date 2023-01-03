@@ -1,0 +1,402 @@
+---
+title: 'TMA4265 Stochastic Modelling: Project 1'
+author: "Kim-Iver Blindheimsvik, Max Pfisterer"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+header-includes:
+- \geometry{top=1in}
+- \usepackage{titling}
+- \pretitle{\begin{flushleft}\Huge\bfseries}
+- \posttitle{\end{flushleft}}
+- \preauthor{\begin{flushleft}\Large}
+- \postauthor{\end{flushleft}}
+- \predate{\begin{flushleft}\large}
+- \postdate{\end{flushleft}}
+- \usepackage{blkarray}
+- \addtolength\jot{6pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, dev = 'pdf', message = FALSE)
+```
+
+\section*{Problem 1: Modelling an outbreak of Measles}
+
+We are considering a SIR-model of an infectious disease where infected individuals go through stages of susceptibility, infection, and a recovered state, immune from infection. The probabilities of transition from each state to the next during one time step is initially kept constant. The probability of infection for a susceptible individual is $0<\beta<1$. An infected individual has a probability $0<\gamma<1$ of recovering, and a recovered individual has a probability of $0<\alpha<1$ of becoming susceptible again. Each state can only stay in its current state or transition to the next, e.g. a susceptible individual has a $1-\beta$ probability of of staying susceptible.
+
+\subsection*{a)}
+Letting $X_n$ be the state of an individual at time n with S, I, R corresponding to states 0, 1, and 2 respectively. $\{X_n:n=0,1,\ldots\}$ is a Markov chain:
+
+$\sum_{i=0}^2P_{0i}=\sum_{i=0}^2P_{1i}=\sum_{i=0}^2P_{2i}=1$, also
+$P\{X_{n+1}=x|X_n=y\}=P\{X_n=x|X_{n-1}=y\}$, i.e. the transition probabilities are only dependent on the current state.
+
+By the previous description and explanation of the transition probabilities we can set up the following transition probability matrix:
+
+$$\mathbf{P} = \left[\begin{array}{rrr}
+1-\beta &   \beta   & 0     \\
+0       &  1-\gamma & \gamma   \\
+\alpha  &     0     & 1-\alpha 
+\end{array}\right]
+$$
+\subsection*{b)}
+Assuming $\beta=0.01$, $\gamma=0.10$, and $\alpha=0.005$,
+
+$\mathbf{P} = \left[\begin{array}{rrr} 0.99 & 0.01 & 0 \\0 &  0.90 & 0.10 \\0.005 & 0 & 0.995 \end{array}\right]\qquad\mathbf{P^2} = \left[\begin{array}{rrr} 0.980100 & 0.018900 & 0.001000 \\ 0.000500 &  0.810000 & 0.189500 \\ 0.009925 &  0.000050 & 0.990025 \end{array}\right]$
+
+$\mathbf{P^2}$ is regular, so we can guarantee that it has a limiting distribution.
+We get the long-run mean number of days per year spent in each state by calculating the limiting distribution $\vec\pi$ of $\mathbf{P}$, which is given by the two conditions: $\pi_j=\sum_{i=0}^2\pi_iP_{ij}$ and $\sum_{i=0}^2\pi_i=1$.
+
+From these equations we get an over-determined system, which we solve by writing out $\pi_0,\pi_1$ and using the second condition, giving us three equations for three unknowns:
+
+
+\begin{align}
+\text{I}&:\quad\pi_0=0.99\pi_0+0.005\pi_2\\
+\text{II}&:\quad\pi_1=0.01\pi_0+0.90\pi_1\\
+\text{III}&:\quad\pi_0+\pi_1+\pi_2=1
+\end{align}
+
+
+Giving us a system we can solve with Gaussian elimination (omitting the intermediary steps for brevity):
+
+$\left[\begin{array}{rrr} \pi_0 \\ \pi_1 \\ \sum_{i=0}^2\pi_i \end{array}\right] = \left[\begin{array}{rrr|r} 0.01  &  0    & -0.005 & 0  \\ -0.01 &  0.10 &    0   & 0  \\ 1     &  1    &    1   & 1 \end{array}\right] \sim \left[\begin{array}{rrr|r} 1 &  0 & 0 & \frac{10}{31}  \\ 0 &  1 & 0 & \frac{1}{31}   \\ 0 &  0 & 1 & \frac{20}{31} \end{array}\right]$
+
+From which we can calculate the long-run mean number of days per year spent in each state
+
+$365\cdot\vec\pi=\left[\begin{array}{rrr} 117.7 \\ 11.8 \\ 235.5 \end{array}\right]$
+
+
+\subsection*{c)}
+Assuming an individual is susceptible at time 0, i.e. $X_n=0$, we first simulate the Markov chain for 7300 time steps (20 years), using the last 10 years for each run to estimate the long-run mean number of days per year spent in each state ($365\cdot\vec\pi$).
+Then, using 30 simulations like the one just described we will compute an approximate 95% confidence interval (CI) for the long-run mean number of days per year spent in each state.
+
+```{r, echo=FALSE,fig.align='center'}
+P <- matrix(c(0.99, 0, 0.005, 0.01, 0.9, 0, 0, 0.1, 0.995), nrow = 3) #transition matrix
+set.seed(69420)
+num_sim = 7300
+sim_markov <- function(num_sim){
+  x = vector('numeric', length = num_sim+1) #empty matrix
+  x[1] = 0
+  for(n in 1:num_sim){
+    x[n+1] = sample.int(3, size = 1, replace = TRUE, prob = P[x[n]+1,])-1
+  }
+  return(x)
+} #markov simulation
+
+pi0 = vector('numeric', length = 30)
+pi1 = vector('numeric', length = 30)
+pi2 = vector('numeric', length = 30)
+
+for (i in 1:30) {
+  sim = tail(sim_markov(num_sim), n=num_sim/2)
+  pi0[i] = sum(sim==0)*365*2/num_sim
+  pi1[i] = sum(sim==1)*365*2/num_sim
+  pi2[i] = sum(sim==2)*365*2/num_sim
+}
+
+#plot(0:num_sim, sim_markov(num_sim), type = "o", lwd = 2, cex.axis = 1.5, 
+#     main = "One Simulation of Xn for 20 years",
+# xlab = "Steps", ylab = "State", cex.lab = 1.5, cex.main = 1.5)
+
+cat("Days spent in state 0:", pi0[30], ", state 1:", pi1[30], ", and state 2:",
+  pi2[30], "\n, during an average year of the last 10 years")
+
+# Using: CI = average +- (z * variance/root(n))
+cat("Confidence interval for days spent in state 0: [",
+    round(mean(pi0) - qnorm(0.975) * sqrt(var(pi0)), digits=5),",",
+    round(mean(pi0) + qnorm(0.975) * sqrt(var(pi0)), digits=5),"]")
+cat("Confidence interval for days spent in state 1: [",
+    round(mean(pi1) - qnorm(0.975) * sqrt(var(pi1)), digits=5),",",
+    round(mean(pi1) + qnorm(0.975) * sqrt(var(pi1)), digits=5),"]")
+cat("Confidence interval for days spent in state 2: [",
+    round(mean(pi2) - qnorm(0.975) * sqrt(var(pi2)), digits=5),",",
+    round(mean(pi2) + qnorm(0.975) * sqrt(var(pi2)), digits=5),"]")
+```
+The confidence intervals were calculated using what we have leaned in a previous course about confidence intervals for normal distributions, using that we independently estimated our $\vec\pi$ 30 times, and that our distribution of the mean of our estimates for pi tend to a normal distribution due to the central limit theorem.
+
+
+\subsection*{d)}
+$Y_n=(S_n,I_n,R_n),\enspace Z_n=(S_n,I_n),\enspace n\geq 0$.
+Given that we know $N=S_n+I_n+R_n$, i.e. the total number of individuals is constant, and that each individual has to be in one of the three states, $Z_n\sim Y_n$ as we can calculate $R_n=N-S_n-I_n$ and we know/can calculate all transition probabilities. $\{Y_n:n=0,1,\ldots\}$ is a Markov chain as it is a discrete time stochastic process with a discrete (finite) state space, and $Y_{n+1}$ is completely independent of $Y_{n-k},\enspace k\geq 1$, so it satisfies the Markov property. Therefore both $\{Y_n:n=0,1,\ldots\}$ and $\{Z_n:n=0,1,\ldots\}$ are markov chains, as they are equivalent. $\{I_n:n=0,1,\ldots\}$ is not a markov chain as we cannot determine $\{I_{n+1}\}$ if $I_n=i<N$ (as then we neither know $S_n$ or $R_n$). If we also know that $I_{n-1}=N$, however, we can estimate $I_{n+1}$, as then $R_n = N-i$ and $S_n=0$. Therefore the Markov property is violated for $\{I_n:n=0,1,\ldots\}$ ($I_n$ depends on more than the previous state), so it is not a Markov chain.
+
+\subsection*{e)}
+We want to model a SIR model like the one described earlier, with probabilities of infection $\beta_n=0.5\frac{I_n}N$, recovery $\gamma=0.1$, and becoming susceptible to infection after recovery $\alpha=0.005$. The total population is $N=1000$ and we know that this is a Markov chain from task $\textbf{1 d)}$.
+
+```{r, include=FALSE}
+alpha = 0.005
+gamma = 0.10
+N = 1000
+n = 300
+
+S_n = rep(0,n+1)
+S_n[1] = 950
+I_n = rep(0,n+1)
+I_n[1] = 50
+R_n = rep(0,n+1)
+
+# Simulating Yn and plotting one realization
+i = 2
+while (i <= n+1) {
+  # Probability of infection
+  beta_n = I_n[i-1]*0.5/N
+  # Amount of people transitioning to each state
+  to_S = rbinom(1,R_n[i-1],alpha)
+  to_I = rbinom(1,S_n[i-1],beta_n)
+  to_R = rbinom(1,I_n[i-1],gamma)
+  # Total amount of people in each state after the current step
+  S_n[i] = S_n[i-1] - to_I + to_S
+  I_n[i] = I_n[i-1] - to_R + to_I
+  R_n[i] = R_n[i-1] - to_S + to_R
+  i = i + 1
+}
+
+```
+
+Plotting one simulated realization of the mentioned process $Y_n$, with the amount of susceptible individuals in red, the amount recovered in blue, and the amount infected in yellow on the next page, together with task 1g.
+```{r, include=FALSE}
+library("ggplot2")
+simY_data <- data.frame(x = c(0:n), S = S_n, I = I_n, R = R_n)
+ggplot(simY_data, aes(x)) +
+  geom_line(aes(y = S, colour = "Susceptible")) + 
+  geom_line(aes(y = I, colour = "Infected")) + 
+  geom_line(aes(y = R, colour = "Recovered")) + 
+  scale_colour_manual("", 
+                      breaks = c("Susceptible", "Infected", "Recovered"),
+                      values = c("red3", "gold2", "blue")) + 
+  labs(title = "Simulation of Yn until n=300") + xlab("Timestep (n)") + 
+  scale_y_continuous("Amount", limits = c(0,N)) + theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+We see that we get a spike in infections after only a few timesteps, and that the vast majority of individuals are in either a susceptible or recovered state. As no-one is recovered in the initial state, and the vast majority are susceptible, we get a large increase in the infected population, as susceptible individuals can only stay susceptible or get infected. As the amount of infected people increases, so does the infection rate, creating an explosive outbreak. The probability of staying in the same state is highest for the recovered, 99.5%, but it varies for the susceptible, being 97.5% at the beginning, and decreasing during the outbreak.
+For the time interval 50-300 the outbreak has been slowed down by the slow transition from recovered to susceptible, and as it for the most part is more likely to stay in the recovered state we get a period of low infection rate, due to high amounts of recovered individuals, caused by the initial outbreak.
+
+
+\subsection*{f)}
+Based on 1000 simulations of the measles outbreak as described in $\textbf{ e)}$, we get these estimates:
+```{r, include=FALSE}
+alpha = 0.005
+gamma = 0.10
+N = 1000
+n = 300
+N_sims = 1000
+
+S_n = rep(0,n+1)
+S_n[1] = 950
+I_n = rep(0,n+1)
+I_n[1] = 50
+R_n = rep(0,n+1)
+
+E_max_I = rep(0,N_sims)
+E_first_time = rep(0,N_sims)
+max_I = 0
+time = 0
+
+# Simulating Yn 1000 times
+j = 1
+while (j <= N_sims) {
+  i = 2
+  while (i <= n+1) {
+    beta_n = I_n[i-1]*0.5/N
+    to_S = rbinom(1,R_n[i-1],alpha)
+    to_I = rbinom(1,S_n[i-1],beta_n)
+    to_R = rbinom(1,I_n[i-1],gamma)
+    S_n[i] = S_n[i-1] - to_I + to_S
+    I_n[i] = I_n[i-1] - to_R + to_I
+    R_n[i] = R_n[i-1] - to_S + to_R
+    if (I_n[i] > max_I) {
+      max_I = I_n[i]
+      time = i  
+    }
+    i = i + 1
+  }
+  E_max_I[j] = max_I
+  E_first_time[j] = time
+  j = j + 1
+} 
+```
+```{r, echo=FALSE}
+# expected maximum numbers of infected individuals
+mean(E_max_I)
+# expected time at which we get the highest number of infected individuals
+mean(E_first_time)
+```
+Which are our $E[max\{I_0,...,I_{300}\}]$, and $E[min\{arg\enspace\underset{n\leq 300}{max} {I_n}\}]$ respectively.
+```{r, echo=FALSE}
+cat("Confidence interval for maximum infected individuals: [",
+    round(mean(E_max_I) - qnorm(0.975) * sqrt(var(E_max_I)), digits=5),",",
+    round(mean(E_max_I) + qnorm(0.975) * sqrt(var(E_max_I)), digits=5),"]")
+
+cat("Confidence interval for expected first time of infection peak: [",
+    round(mean(E_first_time) - qnorm(0.975) * sqrt(var(E_first_time)), digits=5),",",
+    round(mean(E_first_time) + qnorm(0.975) * sqrt(var(E_first_time)), digits=5),"]")
+```
+
+\subsection*{g}
+Here we are assuming that a vaccine completely immunizes, and set the probability of infection to 0.
+From the plots we can see that as the number of immune individuals increases, the proportion of infected to susceptible individuals increases, so the peak of the infection is reached earlier, while the maximal amount of infected individuals decreases (as expected).
+```{r, echo=FALSE,fig.align='center',fig.height=2.8}
+alpha = 0.005
+gamma = 0.10
+N = c(1000,900,400,200)
+n = 300
+N_sims = 1000
+
+for (unvaxxed in N) {
+  set.seed(69420)
+  # Simulating Yn and plotting three realizations
+  S_n = rep(0,n+1)
+  S_n[1] = unvaxxed-50
+  I_n = rep(0,n+1)
+  I_n[1] = 50
+  R_n = rep(0,n+1)
+  
+  i = 2
+  while (i <= n+1) {
+    beta_n = I_n[i-1]*0.5/unvaxxed
+    to_S = rbinom(1,R_n[i-1],alpha)
+    to_I = rbinom(1,S_n[i-1],beta_n)
+    to_R = rbinom(1,I_n[i-1],gamma)
+    S_n[i] = S_n[i-1] - to_I + to_S
+    I_n[i] = I_n[i-1] - to_R + to_I
+    R_n[i] = R_n[i-1] - to_S + to_R
+    i = i + 1
+  }
+  
+  simY_data <- data.frame(
+    x = c(0:n),
+    S = S_n,
+    I = I_n,
+    R = R_n )
+    print(ggplot(simY_data, aes(x)) +
+    geom_line(aes(y = S, colour = "Susceptible")) + 
+    geom_line(aes(y = I, colour = "Infected")) + 
+    geom_line(aes(y = R, colour = "Recovered")) + 
+    scale_colour_manual("", 
+                        breaks = c("Susceptible", "Infected", "Recovered"),
+                        values = c("red3", "gold2", "blue")) + 
+    ggtitle(paste0(c("Simulation of Yn until n=300 for "),unvaxxed,
+            " susceptible individuals")) + 
+    xlab("Timestep (n)") + 
+    scale_y_continuous("Amount", limits = c(0,N)) + 
+    theme_bw() + 
+    theme(plot.title = element_text(hjust = 0.5)))
+}
+```
+
+\section*{Problem 2: Insurance claims}
+In this problem we examine a Poisson process $\{X(t):t\geq 0\}$, where $X(t)$ is the number of claims received in the interval $[0,t]$, and t is measured in days from the start of January 1st. We assume it has rate $\lambda(t)=1.5,t\geq 0$.
+
+\subsection*{a)}
+We want to find $P\{X(59) > 100\} = 1-P\{X(59)\leq 100\} = 1-\sum_{s=0}^x\frac{(\lambda t)^s}{s!}\exp\{-\lambda t\}$ = 
+```{r,echo=FALSE}
+# Setting variables
+lambda = 1.5
+March1 = 59
+# Parameter for Poisson distribution
+pmean = lambda*March1
+# Calculating the probability that we get more than 100 claims
+prob100 <- ppois(100, pmean, lower.tail = FALSE)
+prob100
+```
+Giving us a 10.28% probability of having more than 100 claims at March 1st.
+
+```{r,echo=FALSE}
+# Simulating 1k realizations of our Poisson distribution
+N = 1000
+over100 = c(1:N)
+for (i in 1:N) {
+  over100[i] = ifelse(rpois(1, pmean) > 100, 1, 0)
+}
+# Calculating the probability that we get more than 100 claims
+simprob100 <- mean(over100)
+```
+Simulating 1000 realizations of the Poisson process we got an estimated probability of receiving over 100 claims by March 1st of 10.9%, corresponding well with our exact calculations.
+
+Plotting 10 realizations until t=59, with the mean in red and X(t)=100 in blue:
+```{r, echo=FALSE, fig.align='center'}
+# Plotting 10 realizations
+N = 10
+N_claims <- rpois(N, pmean)
+plot(NULL, NULL, xlim = c(0, March1), ylim = c(0, 115), xlab = "Days",
+     ylab = "Claims", main = "10 Realizations of X(t)", lwd = 2)
+for (i in 1:N) {
+  # Know that times of occurrences of a Poisson process are uniformly
+  # distributed, given that we know the amount of occurrences.
+  times = c(0,sort(runif(N_claims[i],0,March1)),March1)
+  events <- c(0:N_claims[i])
+  # Plot a line at the value we have at occurrence k of the same length
+  # as the interval
+  for(k in 1:(length(events))){
+    lines(times[k:(k+1)], rep(events[k],2), lwd = 2)
+  }
+}
+# Add mean
+lines(c(0, March1), c(0, pmean), col = "red", lwd = 2)
+
+# Add x=100 to compare
+lines(c(0,March1), c(100, 100), col = "blue", lwd = 2)
+```
+
+
+We assume the monetary claims $C_i\sim Exp(\gamma),i\geq1$ with rate parameter $\gamma=10$, are independent of each other and of the arrival times. We get that the total claim amount at time $t$ is given by $Z(t)=\sum_{i=1}^{X(t)}C_i$.
+
+
+\subsection*{b)}
+Simulating 1000 realizations of our Poisson process and computing the realized claim amounts, we get an estimated probability  of 72.5% that the claim amounts will exceed 8 (million kroner) at March 1st.
+```{r, include=FALSE}
+# Simulating 1k realizations of our Exponential distribution
+N = 1000
+over8ml = c(1:N)
+N_claims <- rpois(N, pmean)
+for (i in 1:N) {
+  N_claims[i]
+  over8ml[i] = ifelse(sum(rexp(N_claims[i], 10)) > 8, 1, 0)
+}
+# Calculating the probability that the total claimed amount by March 1
+# is over 8 million
+simprob8ml <- mean(over8ml)
+```
+
+```{r, echo=FALSE,fig.align='center'}
+# Plotting 10 realizations of Z(t)
+N = 10
+N_claims <- rpois(N, pmean)
+plot(NULL, NULL, xlim = c(0, March1), ylim = c(0, 12), xlab = "Days",
+     ylab = "Total Claim Amount", main = "10 Realizations of Z(t)", lwd = 2)
+for (i in 1:N) {
+  # Again, times of Poisson process occurrences given the amount of
+  # occurrences is uniformly distributed
+  times = c(0,sort(runif(N_claims[i],0,March1)),March1)
+  # Sum up the total claim amounts at each time t
+  amounts <- cumsum(rexp(N_claims[i], 10))
+  for(k in 1:length(amounts)){
+    lines(times[k:(k+1)], rep(amounts[k],2), lwd = 2)
+  }
+}
+# Add mean
+lines(c(0, March1), c(0, pmean/10), col = "red", lwd = 2)
+
+# Add x=8 to compare
+lines(c(0,March1), c(8, 8), col = "blue", lwd = 2)
+```
+
+
+\subsection*{c)}
+Call the number of claims exceeding 250000 (1/4 million) kr. by time t, $Y_t$. As the insurance company has a policy of investigating these claims, we want want to find the distribution of $\{Y(t):t\geq 0\}$.
+
+\textit{Finding the probability density function of} $Y(t)$:
+We know that $X(t)\sim\text{Poisson}(\lambda)$, and that $X(t) = Y(t) + \overline Y(t)$, as those are the only two outcomes for each occurrence of $X(t)$, and they are mutually exclusive.
+Using the law of total probability and conditional probability, we obtain:
+$P\{Y(t)=y\}=\sum_{n=0}^\infty P\{Y(t)=y|X(t)=n\}P\{X(t)=n\}$
+
+As the claim amounts for each occurrence are independent, and that the probability $p$ of a claim amount exceeding $\frac14$ million is $p = P\{C_i>\frac14\}=1-P\{C_i\leq\frac14\}=\exp\{-\frac\gamma4\}=\exp\{-\frac52\}$, we know that the amount of claims exceeding $\frac14$ million given that n amounts occurred is Binomially distributed. $P\{Y(t)=y|X(t)=n\} = \binom{n}{y}p^y(1-p)^{n-y}$
+
+From earlier we know that $P\{X(t)=n\}=\frac{(\lambda t)^n}{n!}\exp\{-\lambda t\} = \frac{(\lambda t)^{(n-y)}(\lambda t)^y}{n!}\exp\{-\lambda pt\}\exp\{-\lambda(1-p)t\}$
+
+This gives us that
+$P\{Y(t)=y\}=\sum_{n=0}^\infty P\{Y(t)=y|X(t)=n\}P\{X(t)=n\}\newline=\sum_{n=y}^\infty\ \frac{n!}{(n-y)!y!}\frac{(\lambda pt)^y}{n!}\exp\{-\lambda pt\}(\lambda(1-p)t)^{n-y}\exp\{-\lambda(1-p)t\}\newline = \frac{(\lambda pt)^y}{y!}\exp\{-\lambda pt\} \exp\{-\lambda(1-p)t\}\sum_{n=y}^\infty \frac{(\lambda(1-p)t)^{n-y}}{(n-y)!}\newline = \frac{(\lambda pt)^y}{y!}\exp\{-\lambda pt\}$
+
+This is the density function of a Poisson distribution, which fulfills all necessary conditions of a poisson process:
+It has independent increments that are of distribution $\text{Poisson}(\lambda p)$, with rate $\lambda p = 1.5\exp\{-\frac52\}\approx0.123$, about a tenth of the original rate. Also $Y(0)=0$
+
